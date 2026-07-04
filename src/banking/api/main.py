@@ -3,9 +3,8 @@
 import os
 
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
-
+from fastapi.responses import RedirectResponse
 
 from banking.api.routes import router
 from banking.api.views import views

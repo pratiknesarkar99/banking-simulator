@@ -2,6 +2,8 @@
 time and do NOT settle cashbacks. They exist for the dashboard, not
 for the spec."""
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from banking.engine import BankingEngine
@@ -14,8 +16,11 @@ def engine_dep() -> BankingEngine:
     return get_engine()
 
 
+Engine = Annotated[BankingEngine, Depends(engine_dep)]
+
+
 @views.get("/accounts")
-def list_accounts(eng: BankingEngine = Depends(engine_dep)):
+def list_accounts(eng: Engine):
     return [
         {
             "account_id": acc.account_id,
@@ -29,16 +34,17 @@ def list_accounts(eng: BankingEngine = Depends(engine_dep)):
 
 
 @views.get("/accounts/{account_id}/history")
-def account_history(account_id: str, eng: BankingEngine = Depends(engine_dep)):
+def account_history(account_id: str, eng: Engine):
     acc = eng._registry.get(account_id)
     if acc is None:
         raise HTTPException(404)
     hist = acc.history
     return [
         {"timestamp": t, "balance": b}
-        for t, b in zip(hist._timestamps, hist._balances)
+        for t, b in zip(hist._timestamps, hist._balances, strict=True)
     ]
 
+
 @views.get("/clock")
-def clock(eng: BankingEngine = Depends(engine_dep)):
+def clock(eng: Engine):
     return {"last_timestamp": eng.last_timestamp}

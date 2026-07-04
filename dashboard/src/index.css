@@ -208,7 +208,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 320px;
+  max-height: 270px;
   overflow-y: auto;
 }
 
