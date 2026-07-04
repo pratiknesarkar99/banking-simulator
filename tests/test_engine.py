@@ -2,6 +2,7 @@
 
 import pytest
 
+from banking.cashbacks import CASHBACK_DELAY_MS, cashback_amount
 from banking.engine import BankingEngine, format_top_spenders
 
 
@@ -145,3 +146,92 @@ class TestTopSpenders:
     def test_spec_string_format(self, busy):
         formatted = format_top_spenders(busy.top_spenders(30, 3))
         assert formatted == ["acc1(300)", "acc2(300)", "acc3(100)"]
+
+
+class TestCashbackAmount:
+    def test_two_percent_floor(self):
+        assert cashback_amount(300) == 6
+        assert cashback_amount(149) == 2   # 2.98 floors to 2
+        assert cashback_amount(49) == 0    # 0.98 floors to 0
+        assert cashback_amount(50) == 1
+
+
+class TestPay:
+    @pytest.fixture
+    def funded(self, engine) -> BankingEngine:
+        engine.create_account(1, "acc1")
+        engine.deposit(2, "acc1", 1000)
+        return engine
+
+    def test_pay_returns_sequential_ids(self, funded):
+        assert funded.pay(3, "acc1", 100) == "payment1"
+        assert funded.pay(4, "acc1", 100) == "payment2"
+
+    def test_pay_deducts_balance(self, funded):
+        funded.pay(3, "acc1", 100)
+        assert funded.deposit(4, "acc1", 0) == 900
+
+    def test_pay_counts_as_outgoing(self, funded):
+        funded.pay(3, "acc1", 100)
+        assert funded.top_spenders(4, 1) == [("acc1", 100)]
+
+    def test_pay_missing_account_returns_none(self, engine):
+        assert engine.pay(1, "ghost", 100) is None
+
+    def test_pay_insufficient_funds_returns_none(self, funded):
+        assert funded.pay(3, "acc1", 99999) is None
+
+    def test_failed_pay_does_not_consume_counter(self, funded):
+        funded.pay(3, "acc1", 99999)          # fails
+        assert funded.pay(4, "acc1", 100) == "payment1"
+
+
+class TestCashbackSettlement:
+    @pytest.fixture
+    def paid(self, engine) -> BankingEngine:
+        engine.create_account(1, "acc1")
+        engine.deposit(2, "acc1", 1000)
+        engine.pay(5, "acc1", 300)            # cashback 6 due at 86400005
+        return engine
+
+    def test_status_in_progress_before_window(self, paid):
+        assert paid.get_payment_status(100, "acc1", "payment1") == "IN_PROGRESS"
+
+    def test_status_received_after_window(self, paid):
+        t = 5 + CASHBACK_DELAY_MS
+        assert paid.get_payment_status(t, "acc1", "payment1") == "CASHBACK_RECEIVED"
+
+    def test_cashback_applied_by_unrelated_operation(self, paid):
+        t = 5 + CASHBACK_DELAY_MS
+        paid.create_account(t, "bystander")   # any op settles
+        assert paid.deposit(t + 1, "acc1", 0) == 706
+
+    def test_cashback_lands_at_scheduled_time_in_history(self, paid):
+        t = 5 + CASHBACK_DELAY_MS
+        paid.deposit(t + 1000, "acc1", 0)     # settle late
+        acc = paid._registry.get("acc1")
+        assert acc.history.balance_at(t) == 706
+        assert acc.history.balance_at(t - 1) == 700
+
+    def test_status_wrong_account_returns_none(self, paid):
+        paid.create_account(6, "acc2")
+        assert paid.get_payment_status(7, "acc2", "payment1") is None
+
+    def test_status_unknown_payment_returns_none(self, paid):
+        assert paid.get_payment_status(7, "acc1", "payment999") is None
+
+
+class TestSpecExampleSequence:
+    """The exact walkthrough from the problem statement."""
+
+    def test_full_sequence(self, engine):
+        assert engine.create_account(1, "account1") is True
+        assert engine.create_account(2, "account2") is True
+        assert engine.deposit(3, "account1", 2000) == 2000
+        assert engine.deposit(4, "account2", 2000) == 2000
+        assert engine.pay(5, "account2", 300) == "payment1"
+        assert engine.transfer(6, "account1", "account2", 500) == 1500
+        assert (
+            engine.get_payment_status(13, "account2", "payment1") == "IN_PROGRESS"
+        )
+        assert engine.deposit(86400005, "account2", 100) == 2306

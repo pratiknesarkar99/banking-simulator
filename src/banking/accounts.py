@@ -17,6 +17,13 @@ class Account:
         """Record the current balance into history at this timestamp."""
         self.history.record(timestamp, self.balance)
 
+@dataclass
+class Payment:
+    payment_id: str
+    account_id: str
+    amount: int
+    cashback_at: int
+    cashback_applied: bool = False
 
 class AccountRegistry:
     """Owns all accounts. The only place accounts are created or looked up."""
