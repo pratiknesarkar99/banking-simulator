@@ -29,3 +29,10 @@ export function useOperation() {
         onSettled: () => qc.invalidateQueries(),
     });
 }
+
+export function useClock() {
+    return useQuery({
+        queryKey: ["clock"],
+        queryFn: () => get<{ last_timestamp: number }>("/views/clock"),
+    });
+}

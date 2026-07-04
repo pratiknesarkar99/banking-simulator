@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { useOperation } from "../hooks/useBanking";
+import { useEffect, useRef, useState } from "react";
+import { useClock, useOperation } from "../hooks/useBanking";
 import type { OperationName } from "../api/types";
 
 const FIELD_CONFIG: Record<OperationName, string[]> = {
@@ -14,13 +14,30 @@ const FIELD_CONFIG: Record<OperationName, string[]> = {
 
 const NUMERIC_FIELDS = new Set(["amount", "time_at"]);
 
-export function OperationPanel() {
+interface LogEntry {
+    t: number;
+    text: string;
+    error: boolean;
+}
+
+export function OperationPanel({
+    onExecuted,
+}: {
+    onExecuted: (t: number) => void;
+}) {
     const [op, setOp] = useState<OperationName>("create-account");
     const [fields, setFields] = useState<Record<string, string>>({});
     const [tsOverride, setTsOverride] = useState("");
-    const [log, setLog] = useState<string[]>([]);
+    const [log, setLog] = useState<LogEntry[]>([]);
     const nextTs = useRef(1);
+    const { data: clock } = useClock();
     const { mutateAsync, isPending } = useOperation();
+
+    useEffect(() => {
+        if (clock && clock.last_timestamp >= nextTs.current) {
+            nextTs.current = clock.last_timestamp + 1;
+        }
+    }, [clock]);
 
     async function run() {
         const timestamp = tsOverride ? Number(tsOverride) : nextTs.current;
@@ -32,43 +49,80 @@ export function OperationPanel() {
             const resp = await mutateAsync({ path: op, body });
             nextTs.current = timestamp + 1;
             setTsOverride("");
+            onExecuted(timestamp);
             setLog((l) =>
-                [`t=${timestamp} ${op} → ${JSON.stringify(resp.result)}`, ...l].slice(0, 20)
+                [
+                    {
+                        t: timestamp,
+                        text: `${op} → ${JSON.stringify(resp.result)}`,
+                        error: false,
+                    },
+                    ...l,
+                ].slice(0, 20)
             );
         } catch (e) {
-            setLog((l) => [`t=${timestamp} ${op} ✗ ${(e as Error).message}`, ...l]);
+            onExecuted(timestamp);
+            setLog((l) =>
+                [
+                    {
+                        t: timestamp,
+                        text: `${op} ✗ ${(e as Error).message}`,
+                        error: true,
+                    },
+                    ...l,
+                ].slice(0, 20)
+            );
         }
     }
 
     return (
         <section className="panel">
             <h2>Run operation</h2>
-            <select value={op} onChange={(e) => { setOp(e.target.value as OperationName); setFields({}); }}>
-                {Object.keys(FIELD_CONFIG).map((name) => (
-                    <option key={name} value={name}>{name}</option>
+            <div className="op-form">
+                <select
+                    value={op}
+                    onChange={(e) => {
+                        setOp(e.target.value as OperationName);
+                        setFields({});
+                    }}
+                >
+                    {Object.keys(FIELD_CONFIG).map((name) => (
+                        <option key={name} value={name}>
+                            {name}
+                        </option>
+                    ))}
+                </select>
+
+                {FIELD_CONFIG[op].map((f) => (
+                    <input
+                        key={f}
+                        placeholder={f}
+                        value={fields[f] ?? ""}
+                        onChange={(e) =>
+                            setFields((prev) => ({ ...prev, [f]: e.target.value }))
+                        }
+                    />
                 ))}
-            </select>
 
-            {FIELD_CONFIG[op].map((f) => (
                 <input
-                    key={f}
-                    placeholder={f}
-                    value={fields[f] ?? ""}
-                    onChange={(e) => setFields((prev) => ({ ...prev, [f]: e.target.value }))}
+                    placeholder={`timestamp (auto: ${nextTs.current})`}
+                    value={tsOverride}
+                    onChange={(e) => setTsOverride(e.target.value)}
                 />
-            ))}
 
-            <input
-                placeholder={`timestamp (auto: ${nextTs.current})`}
-                value={tsOverride}
-                onChange={(e) => setTsOverride(e.target.value)}
-            />
-
-            <button onClick={run} disabled={isPending}>Execute</button>
+                <button onClick={run} disabled={isPending}>
+                    Execute
+                </button>
+            </div>
 
             <div className="log">
-                {log.map((line, i) => (
-                    <code key={i}>{line}</code>
+                {log.length === 0 && (
+                    <span className="empty">No operations yet. Run one above.</span>
+                )}
+                {log.map((entry, i) => (
+                    <code key={i} className={entry.error ? "error" : ""}>
+                        <span className="ts">t={entry.t}</span> {entry.text}
+                    </code>
                 ))}
             </div>
         </section>

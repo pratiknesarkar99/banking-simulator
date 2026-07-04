@@ -38,3 +38,7 @@ def account_history(account_id: str, eng: BankingEngine = Depends(engine_dep)):
         {"timestamp": t, "balance": b}
         for t, b in zip(hist._timestamps, hist._balances)
     ]
+
+@views.get("/clock")
+def clock(eng: BankingEngine = Depends(engine_dep)):
+    return {"last_timestamp": eng.last_timestamp}

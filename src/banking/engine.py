@@ -20,12 +20,16 @@ class BankingEngine:
         self._cashbacks = CashbackQueue()
         self._payments: dict[str, Payment] = {}
         self._payment_counter = 0
+        self.last_timestamp = 0
 
     # ── Settlement ───────────────────────────────────────────
 
     def _settle(self, current_timestamp: int) -> None:
         """Apply every cashback due at or before current_timestamp.
         Called at the top of EVERY public operation."""
+        if current_timestamp <= self.last_timestamp:
+            raise ValueError("timestamps must be strictly increasing")
+        self.last_timestamp = max(self.last_timestamp, current_timestamp)
         for cb in self._cashbacks.pop_due(current_timestamp):
             account = self._registry.resolve(cb.account_id)
             account.balance += cb.amount

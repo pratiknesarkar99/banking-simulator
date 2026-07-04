@@ -1,5 +1,7 @@
 """App factory. The engine singleton lives here."""
 
+import os
+
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,9 +24,10 @@ def create_app() -> FastAPI:
         description="Simulated banking system with lazy cashback settlement",
         version="0.1.0",
     )
+    allowed = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
+        allow_origins=[o.strip() for o in allowed.split(",")],
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: banking-simulator-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && pip install -e . --no-deps
+    startCommand: uvicorn banking.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: http://localhost:5173
