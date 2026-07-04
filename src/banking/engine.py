@@ -3,6 +3,10 @@
 from banking.accounts import AccountRegistry
 
 
+def format_top_spenders(entries: list[tuple[str, int]]) -> list[str]:
+    """Render top_spenders results in the spec's exact string format."""
+    return [f"{account_id}({total})" for account_id, total in entries]
+
 class BankingEngine:
     def __init__(self) -> None:
         self._registry = AccountRegistry()
@@ -42,3 +46,16 @@ class BankingEngine:
         source.snapshot(timestamp)
         target.snapshot(timestamp)
         return source.balance
+    
+    # ── Level 2 ──────────────────────────────────────────────
+
+    def top_spenders(self, timestamp: int, n: int) -> list[tuple[str, int]]:
+        """Top n accounts by total outgoing, ties broken by account_id
+        ascending. Returns (account_id, total_outgoing) tuples.
+        """
+        accounts = self._registry.all_accounts()
+        ranked = sorted(
+            accounts,
+            key=lambda acc: (-acc.total_outgoing, acc.account_id),
+        )
+        return [(acc.account_id, acc.total_outgoing) for acc in ranked[:n]]
