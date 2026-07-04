@@ -27,7 +27,7 @@ class BankingEngine:
         """Apply every cashback due at or before current_timestamp.
         Called at the top of EVERY public operation."""
         for cb in self._cashbacks.pop_due(current_timestamp):
-            account = self._registry.get(cb.account_id)
+            account = self._registry.resolve(cb.account_id)
             account.balance += cb.amount
             account.snapshot(cb.execute_at)
             self._payments[cb.payment_id].cashback_applied = True
@@ -41,7 +41,7 @@ class BankingEngine:
     def deposit(self, timestamp: int, account_id: str, amount: int) -> int | None:
         self._settle(timestamp)
         account = self._registry.get(account_id)
-        if account is None:
+        if account is None or not account.is_active:
             return None
         account.balance += amount
         account.snapshot(timestamp)
@@ -59,7 +59,7 @@ class BankingEngine:
             return None
         source = self._registry.get(source_account_id)
         target = self._registry.get(target_account_id)
-        if source is None or target is None:
+        if source is None or target is None or not source.is_active or not target.is_active:
             return None
         if source.balance < amount:
             return None
@@ -75,7 +75,7 @@ class BankingEngine:
 
     def top_spenders(self, timestamp: int, n: int) -> list[tuple[str, int]]:
         self._settle(timestamp)
-        accounts = self._registry.all_accounts()
+        accounts = self._registry.active_accounts()
         ranked = sorted(
             accounts,
             key=lambda acc: (-acc.total_outgoing, acc.account_id),
@@ -87,7 +87,7 @@ class BankingEngine:
     def pay(self, timestamp: int, account_id: str, amount: int) -> str | None:
         self._settle(timestamp)
         account = self._registry.get(account_id)
-        if account is None or account.balance < amount:
+        if account is None or not account.is_active or account.balance < amount:
             return None
 
         account.balance -= amount
@@ -118,10 +118,49 @@ class BankingEngine:
         self, timestamp: int, account_id: str, payment_id: str
     ) -> str | None:
         self._settle(timestamp)
+        holder = self._registry.get(account_id)
+        if holder is None or not holder.is_active:
+            return None
+        payment = self._payments.get(payment_id)
+        if payment is None:
+            return None
+        owner = self._registry.resolve(payment.account_id)
+        if owner is None or owner.account_id != account_id:
+            return None
+        return "CASHBACK_RECEIVED" if payment.cashback_applied else "IN_PROGRESS"
+    
+
+    # ── Level 4 ──────────────────────────────────────────────
+
+    def merge_accounts(
+        self, timestamp: int, account_id1: str, account_id2: str
+    ) -> bool:
+        self._settle(timestamp)
+        if account_id1 == account_id2:
+            return False
+        primary = self._registry.get(account_id1)
+        absorbed = self._registry.get(account_id2)
+        if primary is None or absorbed is None:
+            return False
+        if not primary.is_active or not absorbed.is_active:
+            return False
+
+        primary.balance += absorbed.balance
+        primary.total_outgoing += absorbed.total_outgoing
+        absorbed.balance = 0
+
+        primary.snapshot(timestamp)
+        absorbed.snapshot(timestamp)
+
+        absorbed.merged_into = account_id1
+        absorbed.merged_at = timestamp
+        return True
+
+    def get_balance(
+        self, timestamp: int, account_id: str, time_at: int
+    ) -> int | None:
+        self._settle(timestamp)
         account = self._registry.get(account_id)
         if account is None:
             return None
-        payment = self._payments.get(payment_id)
-        if payment is None or payment.account_id != account_id:
-            return None
-        return "CASHBACK_RECEIVED" if payment.cashback_applied else "IN_PROGRESS"
+        return account.history.balance_at(time_at)

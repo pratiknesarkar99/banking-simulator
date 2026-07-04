@@ -12,9 +12,14 @@ class Account:
     balance: int = 0
     total_outgoing: int = 0
     history: BalanceHistory = field(default_factory=BalanceHistory)
+    merged_into: str | None = None
+    merged_at: int | None = None
+
+    @property
+    def is_active(self) -> bool:
+        return self.merged_into is None
 
     def snapshot(self, timestamp: int) -> None:
-        """Record the current balance into history at this timestamp."""
         self.history.record(timestamp, self.balance)
 
 @dataclass
@@ -44,3 +49,14 @@ class AccountRegistry:
 
     def all_accounts(self) -> list[Account]:
         return list(self._accounts.values())
+    
+    def resolve(self, account_id: str) -> Account | None:
+        """Follow merge redirects to the current owning account.
+        Returns None if the id never existed."""
+        account = self._accounts.get(account_id)
+        while account is not None and account.merged_into is not None:
+            account = self._accounts.get(account.merged_into)
+        return account
+
+    def active_accounts(self) -> list[Account]:
+        return [a for a in self._accounts.values() if a.is_active]

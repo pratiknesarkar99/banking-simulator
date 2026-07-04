@@ -235,3 +235,103 @@ class TestSpecExampleSequence:
             engine.get_payment_status(13, "account2", "payment1") == "IN_PROGRESS"
         )
         assert engine.deposit(86400005, "account2", 100) == 2306
+
+
+class TestMergeAccounts:
+    @pytest.fixture
+    def two_funded(self, engine) -> BankingEngine:
+        engine.create_account(1, "acc1")
+        engine.create_account(2, "acc2")
+        engine.deposit(3, "acc1", 1000)
+        engine.deposit(4, "acc2", 500)
+        return engine
+
+    def test_merge_combines_balances(self, two_funded):
+        assert two_funded.merge_accounts(10, "acc1", "acc2") is True
+        assert two_funded.deposit(11, "acc1", 0) == 1500
+
+    def test_merge_same_account_rejected(self, two_funded):
+        assert two_funded.merge_accounts(10, "acc1", "acc1") is False
+
+    def test_merge_missing_account_rejected(self, two_funded):
+        assert two_funded.merge_accounts(10, "acc1", "ghost") is False
+
+    def test_merged_account_rejects_operations(self, two_funded):
+        two_funded.merge_accounts(10, "acc1", "acc2")
+        assert two_funded.deposit(11, "acc2", 100) is None
+        assert two_funded.transfer(12, "acc2", "acc1", 50) is None
+
+    def test_merge_combines_outgoing_totals(self, two_funded):
+        two_funded.transfer(5, "acc1", "acc2", 200)
+        two_funded.transfer(6, "acc2", "acc1", 100)
+        two_funded.merge_accounts(10, "acc1", "acc2")
+        assert two_funded.top_spenders(11, 1) == [("acc1", 300)]
+
+    def test_merged_account_excluded_from_top_spenders(self, two_funded):
+        two_funded.merge_accounts(10, "acc1", "acc2")
+        assert len(two_funded.top_spenders(11, 10)) == 1
+
+    def test_pending_cashback_redirects_to_primary(self, two_funded):
+        two_funded.pay(5, "acc2", 300)                  # cashback 6 at 86400005
+        two_funded.merge_accounts(10, "acc1", "acc2")   # acc1 absorbs acc2 (200 left)
+        t = 5 + CASHBACK_DELAY_MS
+        assert two_funded.deposit(t, "acc1", 0) == 1206
+
+    def test_payment_status_follows_merge(self, two_funded):
+        two_funded.pay(5, "acc2", 300)
+        two_funded.merge_accounts(10, "acc1", "acc2")
+        assert two_funded.get_payment_status(11, "acc1", "payment1") == "IN_PROGRESS"
+        assert two_funded.get_payment_status(12, "acc2", "payment1") is None
+
+    def test_chained_merge_resolves(self, engine):
+        for i in (1, 2, 3):
+            engine.create_account(i, f"acc{i}")
+        engine.deposit(4, "acc3", 100)
+        engine.pay(5, "acc3", 100)                      # cashback 2
+        engine.merge_accounts(10, "acc2", "acc3")
+        engine.merge_accounts(11, "acc1", "acc2")
+        t = 5 + CASHBACK_DELAY_MS
+        assert engine.deposit(t, "acc1", 0) == 2
+
+
+class TestGetBalance:
+    def test_balance_at_past_timestamp(self, engine):
+        engine.create_account(1, "acc1")
+        engine.deposit(5, "acc1", 100)
+        engine.deposit(10, "acc1", 50)
+        assert engine.get_balance(20, "acc1", 7) == 100
+
+    def test_before_creation_returns_none(self, engine):
+        engine.create_account(5, "acc1")
+        assert engine.get_balance(10, "acc1", 3) is None
+
+    def test_unknown_account_returns_none(self, engine):
+        assert engine.get_balance(10, "ghost", 5) is None
+
+    def test_exact_timestamp_is_post_operation(self, engine):
+        engine.create_account(1, "acc1")
+        engine.deposit(5, "acc1", 100)
+        assert engine.get_balance(10, "acc1", 5) == 100
+
+    def test_getbalance_triggers_settlement(self, engine):
+        engine.create_account(1, "acc1")
+        engine.deposit(2, "acc1", 1000)
+        engine.pay(5, "acc1", 300)
+        t = 5 + CASHBACK_DELAY_MS
+        assert engine.get_balance(t, "acc1", t) == 706
+
+    def test_premerger_query_is_primary_alone(self, engine):
+        """Interpretation A pinned as a test."""
+        engine.create_account(1, "acc1")
+        engine.create_account(2, "acc2")
+        engine.deposit(3, "acc1", 1000)
+        engine.deposit(4, "acc2", 500)
+        engine.merge_accounts(10, "acc1", "acc2")
+        assert engine.get_balance(20, "acc1", 5) == 1000   # not 1500
+
+    def test_absorbed_history_still_queryable(self, engine):
+        engine.create_account(1, "acc1")
+        engine.create_account(2, "acc2")
+        engine.deposit(4, "acc2", 500)
+        engine.merge_accounts(10, "acc1", "acc2")
+        assert engine.get_balance(20, "acc2", 5) == 500
