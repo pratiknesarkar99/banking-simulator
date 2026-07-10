@@ -7,6 +7,12 @@ a pure Python domain engine, a thin FastAPI layer, and a React dashboard.
 **Live demo:** https://banking-simulator.vercel.app
 **API docs:** https://banking-simulator-api.onrender.com/docs
 
+<img width="1470" height="956" alt="Screenshot 2026-07-03 at 11 05 55 PM" src="https://github.com/user-attachments/assets/9557577b-3fb9-49ef-8c8f-e16f10b8f2b2" />
+<img width="1470" height="956" alt="Screenshot 2026-07-04 at 12 18 14 AM" src="https://github.com/user-attachments/assets/391661c8-4a8f-47c8-b508-da4e64ae8a93" />
+<img width="385" height="272" alt="Screenshot 2026-07-04 at 2 44 35 PM" src="https://github.com/user-attachments/assets/7b18cc55-e4ad-4257-afa3-8933e1ddda99" />
+<img width="1470" height="704" alt="Screenshot 2026-07-04 at 2 44 17 PM" src="https://github.com/user-attachments/assets/a5dc6e73-c05c-4739-bd4d-3e8ca6bcc2b3" />
+
+
 > Note: the API runs on Render's free tier. The first request after idle
 > can take up to a minute while the service wakes. State is in-memory by
 > design and resets on restart, so every visitor gets a clean slate.
